@@ -25,7 +25,7 @@ pub enum Error {
 
 impl<T> Graph<T>
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
+    T: Clone + Eq + std::hash::Hash,
 {
     pub fn new() -> Self {
         Self {
@@ -138,7 +138,7 @@ where
 
 fn insert_to_deps<T>(edges: &mut HashMap<T, HashSet<T>>, key: T, value: T)
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
+    T: Clone + Eq + std::hash::Hash,
 {
     match edges.get_mut(&key) {
         Some(set) => {
@@ -153,7 +153,7 @@ where
 #[inline(always)]
 fn dig_deep<T>(edges: &HashMap<T, HashSet<T>>, node: &T) -> HashSet<T>
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
+    T: Clone + Eq + std::hash::Hash,
 {
     let mut search_next = vec![node];
     let mut result = HashSet::<T>::new();
@@ -185,7 +185,7 @@ where
 
 fn rm_from_deps<T>(edges: &mut Edges<T>, key: &T, target: &T)
 where
-    T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
+    T: Clone + Eq + std::hash::Hash,
 {
     let nodes = edges.get_mut(key);
     if nodes.is_none() {
