@@ -54,13 +54,7 @@ where
     }
 
     pub fn undepend(&mut self, dependent: &T, dependency: &T) -> Result<(), Error> {
-        let dependencies = self.dependencies.get(dependent);
-        if dependencies.is_none() {
-            return Err(Error::NoSuchDirectDependency);
-        }
-
-        let dependencies = dependencies.unwrap();
-        if !dependencies.contains(dependency) {
+        if !self.depends_on_directly(dependent, dependency) {
             return Err(Error::NoSuchDirectDependency);
         }
 
@@ -70,8 +64,17 @@ where
         Ok(())
     }
 
+    #[inline(always)]
     pub fn contains(&self, node: &T) -> bool {
         self.nodes.contains(node)
+    }
+
+    #[inline(always)]
+    pub fn depends_on_directly(&self, dependent: &T, dependency: &T) -> bool {
+        self.dependencies
+            .get(dependent)
+            .map(|deps| deps.contains(dependency))
+            .unwrap_or(false)
     }
 
     pub fn dependencies(&self, node: &T) -> HashSet<T> {
@@ -101,6 +104,7 @@ where
     };
 }
 
+#[inline(always)]
 fn dig_deep<T>(edges: &HashMap<T, HashSet<T>>, node: &T) -> HashSet<T>
 where
     T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
@@ -133,7 +137,7 @@ where
     result
 }
 
-pub(crate) fn rm_from_deps<T>(edges: &mut Edges<T>, key: &T, target: &T)
+fn rm_from_deps<T>(edges: &mut Edges<T>, key: &T, target: &T)
 where
     T: Clone + Eq + std::hash::Hash + std::fmt::Debug,
 {
@@ -177,21 +181,25 @@ mod tests {
     const PROTO_PLANET: &'static str = "proto-planet";
     const PLANET: &'static str = "planet";
 
-    #[test]
-    fn test_basic_dependency() {
+    fn default_graph<'a>() -> Graph<&'a str> {
         let mut g = Graph::<&str>::default();
         g.depend(STAR_DUST, BIGBANG).unwrap();
         g.depend(STAR, STAR_DUST).unwrap();
+        g.depend(PROTO_PLANET, STAR).unwrap();
+        g.depend(PLANET, PROTO_PLANET).unwrap();
 
-        assert_eq!(g.dependents(&STAR), HashSet::from([]));
+        g
+    }
+
+    #[test]
+    fn test_basic_dependency() {
+        let mut g = default_graph();
+        assert_eq!(g.dependents(&STAR), HashSet::from([PROTO_PLANET, PLANET]));
 
         assert_eq!(true, g.depends_on(&STAR, &STAR_DUST));
         assert_eq!(true, g.depends_on(&STAR, &BIGBANG));
         assert_eq!(true, g.depends_on(&STAR_DUST, &BIGBANG));
         assert_eq!(false, g.depends_on(&BIGBANG, &STAR_DUST));
-
-        g.depend(PROTO_PLANET, STAR).unwrap();
-        g.depend(PLANET, PROTO_PLANET).unwrap();
 
         assert_eq!(true, g.depends_on(&PLANET, &BIGBANG));
         assert_eq!(true, g.depends_on(&PLANET, &STAR_DUST));
@@ -225,20 +233,44 @@ mod tests {
         assert_eq!(false, g.depends_on(&BIGBANG, &STAR_DUST));
         assert_eq!(false, g.depends_on(&STAR_DUST, &STAR_DUST));
 
-        g.depend("stardust", "star")
+        g.depend(STAR_DUST, STAR)
             .expect_err("stardust should not depend on star");
+
+        g.depend(BIGBANG, "god").unwrap();
+        g.depend("sun", STAR_DUST).unwrap();
+        g.depend("earth", "sun").unwrap();
+        g.depend("human", "earth").unwrap();
+
+        assert_eq!(true, g.depends_on(&"human", &"earth"));
+        assert_eq!(true, g.depends_on(&"human", &"sun"));
+        assert_eq!(true, g.depends_on(&"human", &STAR_DUST));
+        assert_eq!(true, g.depends_on(&"human", &"god"));
+    }
+
+    #[test]
+    fn test_depends_on_directly() {
+        let mut g = Graph::new();
+
+        g.depend("b", "a").unwrap();
+        g.depend("c", "b").unwrap();
+        g.depend("d", "c").unwrap();
+
+        assert_eq!(true, g.depends_on_directly(&"d", &"c"));
+        assert_eq!(true, g.depends_on_directly(&"c", &"b"));
+        assert_eq!(true, g.depends_on_directly(&"b", &"a"));
+
+        assert_eq!(false, g.depends_on_directly(&"d", &"b"));
+        assert_eq!(false, g.depends_on_directly(&"c", &"a"));
+        assert_eq!(false, g.depends_on_directly(&"b", &"x"));
     }
 
     #[test]
     fn test_deep_dig() {
-        let mut g = Graph::<&str>::default();
-        g.depend(STAR_DUST, BIGBANG).unwrap();
-        g.depend(STAR, STAR_DUST).unwrap();
-        g.depend(PROTO_PLANET, STAR).unwrap();
+        let mut g = default_graph();
 
         assert_eq!(
             g.dependents(&BIGBANG), //
-            HashSet::from([STAR, STAR_DUST, PROTO_PLANET])
+            HashSet::from([STAR, STAR_DUST, PROTO_PLANET, PLANET])
         );
 
         assert_eq!(
@@ -255,6 +287,87 @@ mod tests {
             g.dependencies(&STAR), //
             HashSet::from([BIGBANG, STAR_DUST]),
         );
+
+        assert_eq!(
+            g.dependencies(&PLANET), //
+            HashSet::from([BIGBANG, STAR_DUST, STAR, PROTO_PLANET]),
+        );
+
+        g.depend(BIGBANG, "god").unwrap();
+        g.depend("sun", STAR_DUST).unwrap();
+        g.depend("earth", "sun").unwrap();
+        g.depend("earth", "god").unwrap();
+        g.depend("human", "earth").unwrap();
+
+        {
+            assert_eq!(
+                g.dependents(&"god"),
+                HashSet::from([
+                    BIGBANG,
+                    STAR_DUST,
+                    STAR,
+                    PROTO_PLANET,
+                    PLANET,
+                    "sun",
+                    "earth",
+                    "human"
+                ]),
+            );
+
+            assert_eq!(
+                g.dependents(&BIGBANG),
+                HashSet::from([
+                    STAR_DUST,
+                    STAR,
+                    PROTO_PLANET,
+                    PLANET,
+                    "sun",
+                    "earth",
+                    "human"
+                ])
+            );
+
+            assert_eq!(
+                g.dependents(&STAR_DUST),
+                HashSet::from([STAR, PROTO_PLANET, PLANET, "sun", "earth", "human"])
+            );
+
+            assert_eq!(g.dependents(&STAR), HashSet::from([PROTO_PLANET, PLANET]));
+        }
+
+        {
+            assert_eq!(g.dependencies(&"god"), HashSet::default());
+
+            assert_eq!(
+                g.dependencies(&"sun"),
+                HashSet::from([STAR_DUST, BIGBANG, "god"])
+            );
+
+            assert_eq!(
+                g.dependencies(&"earth"),
+                HashSet::from([STAR_DUST, BIGBANG, "god", "sun"])
+            );
+
+            assert_eq!(
+                g.dependencies(&"human"),
+                HashSet::from(["god", BIGBANG, STAR_DUST, "sun", "earth"])
+            );
+
+            g.depend("human", PLANET).unwrap();
+            assert_eq!(
+                g.dependencies(&"human"),
+                HashSet::from([
+                    "god",
+                    BIGBANG,
+                    STAR_DUST,
+                    "sun",
+                    "earth",
+                    STAR,
+                    PROTO_PLANET,
+                    PLANET
+                ])
+            );
+        }
     }
 
     #[test]
