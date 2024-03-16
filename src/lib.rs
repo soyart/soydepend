@@ -134,6 +134,63 @@ where
         self.delete(target);
         Ok(())
     }
+
+    fn remove_deep(&mut self, target: &T, remove_dependencies: bool) {
+        let mut q = vec![target.clone()];
+
+        while !q.is_empty() {
+            let current = pop_queue(&mut q);
+
+            if self.dependents.contains_key(&current) {
+                let cloned = self.dependents.clone();
+                let dependents = cloned.get(&current).unwrap();
+
+                for dependent in dependents.iter() {
+                    self.undepend(dependent, &current).unwrap();
+                    q.push(dependent.clone());
+                }
+            }
+
+            if self.dependencies.contains_key(&current) {
+                let cloned = self.dependencies.clone();
+                let dependencies = cloned.get(&current).unwrap();
+
+                for dependency in dependencies {
+                    // Push dependency to queue if remove_dependencies is set,
+                    // and the dependency only has 1 dependent which happens to be current
+                    if remove_dependencies {
+                        if let Some(siblings) = self.dependents.get(dependency) {
+                            match siblings.len() {
+                                0 => {
+                                    panic!("empty sibling");
+                                }
+                                1 => {
+                                    if !siblings.contains(&current) {
+                                        panic!("sibling does not contain target")
+                                    }
+                                }
+                                _ => continue,
+                            };
+                        }
+
+                        q.push(dependency.clone());
+                    }
+
+                    self.undepend(&current, dependency).unwrap();
+                }
+            }
+
+            self.delete(&current);
+        }
+    }
+
+    pub fn remove_force(&mut self, target: &T) {
+        self.remove_deep(target, false);
+    }
+
+    pub fn remove_autoremove(&mut self, target: &T) {
+        self.remove_deep(target, true);
+    }
 }
 
 fn insert_to_deps<T>(edges: &mut HashMap<T, HashSet<T>>, key: T, value: T)
@@ -197,12 +254,32 @@ where
         return;
     }
 
-    if nodes.len() <= 1 {
-        edges.remove(key);
+    if nodes.len() != 1 {
+        nodes.remove(target);
         return;
     }
 
-    nodes.remove(target);
+    edges.remove(key);
+}
+
+fn pop_queue<T>(queue: &mut Vec<T>) -> T
+where
+    T: Clone,
+{
+    assert!(!queue.is_empty());
+
+    let popped = queue[0].clone();
+    queue.remove(0);
+
+    popped
+}
+
+#[test]
+fn test_pop_queue() {
+    let mut q = vec![0, 1, 2, 3, 4, 5, 20, 17];
+    for v in q.clone().into_iter() {
+        assert_eq!(v, pop_queue(&mut q));
+    }
 }
 
 impl std::fmt::Display for Error {
@@ -447,6 +524,9 @@ mod tests {
         );
 
         assert!(!g.contains(&PLANET));
+        assert!(!g.dependencies.contains_key(&PLANET));
+        assert!(!g.dependents.contains_key(&PLANET));
+
         assert_eq!(g.dependencies(&PLANET), HashSet::default());
         assert_eq!(g.dependents(&PLANET), HashSet::default());
 
@@ -479,5 +559,98 @@ mod tests {
         assert_eq!(g.dependencies(&STAR), HashSet::from([STARDUST, BIGBANG]));
         assert_eq!(g.dependencies(&STARDUST), HashSet::from([BIGBANG]));
         assert_eq!(g.dependencies(&BIGBANG), HashSet::default());
+    }
+
+    #[test]
+    fn test_remove_force() {
+        let mut g = default_graph();
+        g.remove_force(&STAR);
+
+        assert!(!g.contains(&STAR));
+        assert!(!g.contains(&PROTO_PLANET));
+        assert!(!g.contains(&PLANET));
+
+        assert!(!g.dependents.contains_key(&STAR));
+        assert!(!g.dependents.contains_key(&PROTO_PLANET));
+        assert!(!g.dependents.contains_key(&PLANET));
+        assert!(!g.dependencies.contains_key(&STAR));
+        assert!(!g.dependencies.contains_key(&PROTO_PLANET));
+        assert!(!g.dependencies.contains_key(&PLANET));
+
+        assert_eq!(g.dependents(&BIGBANG), HashSet::from([STARDUST]));
+        assert_eq!(g.dependents(&STARDUST), HashSet::default());
+    }
+
+    #[test]
+    fn test_remove_autoremove() {
+        let mut g = default_graph();
+        g.depend("light", BIGBANG).unwrap();
+        g.depend("uv", "light").unwrap();
+        g.depend("infrared", "light").unwrap();
+        g.depend("darkskin", "uv").unwrap();
+        g.depend("blackhole", BIGBANG).unwrap();
+        g.depend("whitehole", "blackhole").unwrap();
+
+        g.remove_autoremove(&PROTO_PLANET);
+
+        assert!(!g.contains(&STARDUST));
+        assert!(!g.contains(&STAR));
+        assert!(!g.contains(&PROTO_PLANET));
+        assert!(!g.contains(&PLANET));
+
+        assert!(!g.dependents.contains_key(&STARDUST));
+        assert!(!g.dependents.contains_key(&STAR));
+        assert!(!g.dependents.contains_key(&PROTO_PLANET));
+        assert!(!g.dependents.contains_key(&PLANET));
+        assert!(!g.dependencies.contains_key(&STARDUST));
+        assert!(!g.dependencies.contains_key(&STAR));
+        assert!(!g.dependencies.contains_key(&PROTO_PLANET));
+        assert!(!g.dependencies.contains_key(&PLANET));
+
+        assert!(!g.depends_on(&"light", &"blackhole"));
+        assert!(!g.depends_on(&"uv", &"blackhole"));
+        assert!(!g.depends_on(&"infrared", &"blackhole"));
+        assert!(!g.depends_on(&"light", &"whitehole"));
+        assert!(!g.depends_on(&"uv", &"whitehole"));
+        assert!(!g.depends_on(&"infrared", &"whitehole"));
+
+        assert_eq!(
+            g.dependents(&BIGBANG),
+            HashSet::from([
+                "light",
+                "infrared",
+                "uv",
+                "darkskin",
+                "blackhole",
+                "whitehole"
+            ])
+        );
+
+        g.remove_autoremove(&"uv");
+
+        assert!(g.contains(&"light"));
+        assert!(g.contains(&"infrared"));
+        assert!(!g.contains(&"uv"));
+        assert!(!g.contains(&"darkskin"));
+
+        assert_eq!(
+            g.dependents(&BIGBANG),
+            HashSet::from(["light", "infrared", "blackhole", "whitehole"])
+        );
+        assert_eq!(g.dependents(&"light"), HashSet::from(["infrared"]));
+        assert_eq!(g.dependents(&"infrared"), HashSet::default());
+        assert_eq!(g.dependents(&"blackhole"), HashSet::from(["whitehole"]));
+        assert_eq!(g.dependents(&"whitehole"), HashSet::default());
+        assert_eq!(g.dependencies(&BIGBANG), HashSet::default());
+        assert_eq!(g.dependencies(&"light"), HashSet::from([BIGBANG]));
+        assert_eq!(
+            g.dependencies(&"infrared"),
+            HashSet::from([BIGBANG, "light"])
+        );
+        assert_eq!(g.dependencies(&"blackhole"), HashSet::from([BIGBANG]));
+        assert_eq!(
+            g.dependencies(&"whitehole"),
+            HashSet::from([BIGBANG, "blackhole"])
+        );
     }
 }
