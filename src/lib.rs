@@ -101,9 +101,11 @@ where
         let mut leaves = HashSet::new();
 
         for n in &self.nodes {
-            if !self.dependencies.contains_key(n) {
-                leaves.insert(n.clone());
+            if self.dependencies.contains_key(n) {
+                continue;
             }
+
+            leaves.insert(n.clone());
         }
 
         leaves
