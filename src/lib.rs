@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::collections::{HashMap, HashSet};
 
 type Edges<T> = HashMap<T, HashSet<T>>;
@@ -210,6 +208,40 @@ where
     pub fn remove_autoremove(&mut self, target: &T) {
         self.remove_deep(target, true);
     }
+
+    /// Shrinks graph to minimal memory allocation,
+    /// while keeping values intact.
+    pub fn realloc(&mut self) {
+        self.nodes.shrink_to_fit();
+        self.dependents.shrink_to_fit();
+        self.dependencies.shrink_to_fit();
+    }
+}
+
+/// Asserts that invariants are still valid
+pub fn assert_no_dangling<T>(g: &Graph<T>)
+where
+    T: Clone + std::fmt::Debug + std::hash::Hash + Eq,
+{
+    for (dependency, dependents) in &g.dependents {
+        assert!(g.nodes.contains(dependency));
+
+        dependents.iter().for_each(|dependent| {
+            assert!(g.nodes.contains(dependent));
+            assert!(edges_contain(&g.dependents, dependency, dependent));
+            assert!(edges_contain(&g.dependencies, dependent, dependency));
+        });
+    }
+
+    for (dependent, dependencies) in &g.dependencies {
+        assert!(g.nodes.contains(dependent));
+
+        dependencies.iter().for_each(|dependency| {
+            assert!(g.nodes.contains(dependent));
+            assert!(edges_contain(&g.dependents, dependency, dependent));
+            assert!(edges_contain(&g.dependencies, dependent, dependency));
+        })
+    }
 }
 
 fn insert_to_deps<T>(edges: &mut HashMap<T, HashSet<T>>, key: T, value: T)
@@ -298,31 +330,6 @@ where
     T: Eq + std::hash::Hash,
 {
     edges.get(key).is_some_and(|values| values.contains(value))
-}
-
-fn assert_no_dangling<T>(g: &Graph<T>)
-where
-    T: Clone + std::fmt::Debug + std::hash::Hash + Eq,
-{
-    for (dependency, dependents) in &g.dependents {
-        assert!(g.nodes.contains(dependency));
-
-        dependents.iter().for_each(|dependent| {
-            assert!(g.nodes.contains(dependent));
-            assert!(edges_contain(&g.dependents, dependency, dependent));
-            assert!(edges_contain(&g.dependencies, dependent, dependency));
-        });
-    }
-
-    for (dependent, dependencies) in &g.dependencies {
-        assert!(g.nodes.contains(dependent));
-
-        dependencies.iter().for_each(|dependency| {
-            assert!(g.nodes.contains(dependent));
-            assert!(edges_contain(&g.dependents, dependency, dependent));
-            assert!(edges_contain(&g.dependencies, dependent, dependency));
-        })
-    }
 }
 
 #[test]
@@ -427,7 +434,8 @@ mod tests {
         g.depend("earth", "sun").unwrap();
         g.depend("human", "earth").unwrap();
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(g.depends_on(&"human", &"earth"));
         assert!(g.depends_on(&"human", &"sun"));
@@ -442,6 +450,9 @@ mod tests {
         g.depend("b", "a").unwrap();
         g.depend("c", "b").unwrap();
         g.depend("d", "c").unwrap();
+
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(g.depends_on_directly(&"d", &"c"));
         assert!(g.depends_on_directly(&"c", &"b"));
@@ -483,7 +494,8 @@ mod tests {
         g.depend("earth", "god").unwrap();
         g.depend("human", "earth").unwrap();
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         {
             assert_eq!(
@@ -570,12 +582,14 @@ mod tests {
         g.undepend(&STAR, &BIGBANG)
             .expect_err("should not be able to undepend deep dependency");
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         g.undepend(&STAR, &STARDUST)
             .expect("should be able to undepend direct dependency");
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(!g.depends_on(&STAR, &STARDUST));
         assert!(!g.depends_on(&STAR, &BIGBANG));
@@ -586,7 +600,8 @@ mod tests {
         let mut g = default_graph();
 
         g.delete(&PROTO_PLANET);
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         g.depend("b", "a").unwrap();
         g.depend("x", "a").unwrap();
@@ -594,13 +609,16 @@ mod tests {
         g.depend("z", "y").unwrap();
 
         g.delete(&"y");
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         g.delete(&"a");
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         g.delete(&"x");
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
     }
 
     #[test]
@@ -617,6 +635,9 @@ mod tests {
 
         // with y removed, z should be a leaf
         g.delete(&"y");
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
+
         assert_eq!(g.leaves(), set![BIGBANG, "a", "z"]);
     }
 
@@ -652,7 +673,8 @@ mod tests {
         assert_eq!(g.dependencies(&BIGBANG), set![]);
 
         g.remove(&PROTO_PLANET).unwrap();
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(!g.contains(&PROTO_PLANET));
         assert_eq!(g.dependencies(&PROTO_PLANET), set![]);
@@ -672,7 +694,8 @@ mod tests {
         let mut g = default_graph();
         g.remove_force(&STAR);
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(!g.contains(&STAR));
         assert!(!g.contains(&PROTO_PLANET));
@@ -701,7 +724,8 @@ mod tests {
 
         g.remove_autoremove(&PROTO_PLANET);
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(!g.contains(&STARDUST));
         assert!(!g.contains(&STAR));
@@ -738,7 +762,8 @@ mod tests {
 
         g.remove_autoremove(&"uv");
 
-        assert_no_dangling(&g);
+        g.realloc(); // random realloc test
+        assert_no_dangling(&g); // random dangling test
 
         assert!(g.contains(&"light"));
         assert!(g.contains(&"infrared"));
