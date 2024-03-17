@@ -111,6 +111,20 @@ where
         leaves
     }
 
+    pub fn layers(&self) -> Vec<HashSet<T>> {
+        let mut layers = Vec::new();
+        let mut cloned = self.clone();
+
+        while !cloned.nodes.is_empty() {
+            let leaves = cloned.leaves();
+            layers.push(leaves.clone());
+
+            leaves.iter().for_each(|leaf| cloned.delete(leaf));
+        }
+
+        layers
+    }
+
     /// Internal method for complete removal of the target
     fn delete(&mut self, target: &T) {
         if let Some(dependencies) = self.dependencies.get(target) {
@@ -333,6 +347,16 @@ impl std::fmt::Display for Error {
 mod tests {
     use super::*;
 
+    macro_rules! set {
+        ($($x:expr),*) => {
+            HashSet::from([$($x), *])
+        };
+
+        [$($x:expr),*] => {
+            new_set!($($x), *)
+        };
+    }
+
     const BIGBANG: &'static str = "bigbang";
     const STARDUST: &'static str = "stardust";
     const STAR: &'static str = "star";
@@ -353,7 +377,8 @@ mod tests {
     #[test]
     fn test_basic_dependency() {
         let mut g = default_graph();
-        assert_eq!(g.dependents(&STAR), HashSet::from([PROTO_PLANET, PLANET]));
+        assert_eq!(g.dependents(&STAR), set![PROTO_PLANET, PLANET]);
+        assert_eq!(g.dependents(&STAR), set!(PROTO_PLANET, PLANET));
 
         assert!(g.depends_on(&STAR, &STARDUST));
         assert!(g.depends_on(&STAR, &BIGBANG));
@@ -431,27 +456,23 @@ mod tests {
 
         assert_eq!(
             g.dependents(&BIGBANG), //
-            HashSet::from([STAR, STARDUST, PROTO_PLANET, PLANET])
+            set![STAR, STARDUST, PROTO_PLANET, PLANET]
         );
-
         assert_eq!(
             g.dependencies(&BIGBANG), //
-            HashSet::default(),
+            set![],
         );
-
         assert_eq!(
             g.dependencies(&STARDUST), //
-            HashSet::from([BIGBANG]),
+            set![BIGBANG],
         );
-
         assert_eq!(
             g.dependencies(&STAR), //
-            HashSet::from([BIGBANG, STARDUST]),
+            set![BIGBANG, STARDUST],
         );
-
         assert_eq!(
             g.dependencies(&PLANET), //
-            HashSet::from([BIGBANG, STARDUST, STAR, PROTO_PLANET]),
+            set![BIGBANG, STARDUST, STAR, PROTO_PLANET]
         );
 
         g.depend(BIGBANG, "god").unwrap();
@@ -465,7 +486,7 @@ mod tests {
         {
             assert_eq!(
                 g.dependents(&"god"),
-                HashSet::from([
+                set![
                     BIGBANG,
                     STARDUST,
                     STAR,
@@ -474,12 +495,12 @@ mod tests {
                     "sun",
                     "earth",
                     "human"
-                ]),
+                ],
             );
 
             assert_eq!(
                 g.dependents(&BIGBANG),
-                HashSet::from([
+                set![
                     STARDUST,
                     STAR,
                     PROTO_PLANET,
@@ -487,39 +508,44 @@ mod tests {
                     "sun",
                     "earth",
                     "human"
-                ])
+                ]
             );
 
             assert_eq!(
                 g.dependents(&STARDUST),
-                HashSet::from([STAR, PROTO_PLANET, PLANET, "sun", "earth", "human"])
+                set![STAR, PROTO_PLANET, PLANET, "sun", "earth", "human"],
             );
 
-            assert_eq!(g.dependents(&STAR), HashSet::from([PROTO_PLANET, PLANET]));
+            assert_eq!(
+                g.dependents(&STAR), //
+                set![PROTO_PLANET, PLANET],
+            );
         }
 
         {
-            assert_eq!(g.dependencies(&"god"), HashSet::default());
-
             assert_eq!(
-                g.dependencies(&"sun"),
-                HashSet::from([STARDUST, BIGBANG, "god"])
+                g.dependencies(&"god"), //
+                set![]
             );
-
             assert_eq!(
-                g.dependencies(&"earth"),
-                HashSet::from([STARDUST, BIGBANG, "god", "sun"])
+                g.dependencies(&"sun"), //
+                set![STARDUST, BIGBANG, "god"]
+            );
+            assert_eq!(
+                g.dependencies(&"earth"), //
+                set![STARDUST, BIGBANG, "god", "sun"],
             );
 
             assert_eq!(
                 g.dependencies(&"human"),
-                HashSet::from(["god", BIGBANG, STARDUST, "sun", "earth"])
+                set!["god", BIGBANG, STARDUST, "sun", "earth"],
             );
 
             g.depend("human", PLANET).unwrap();
+
             assert_eq!(
                 g.dependencies(&"human"),
-                HashSet::from([
+                set![
                     "god",
                     BIGBANG,
                     STARDUST,
@@ -528,7 +554,7 @@ mod tests {
                     STAR,
                     PROTO_PLANET,
                     PLANET
-                ])
+                ],
             );
         }
     }
@@ -578,18 +604,18 @@ mod tests {
     #[test]
     fn test_leaves() {
         let mut g = default_graph();
-        assert_eq!(g.leaves(), HashSet::from([BIGBANG]));
+        assert_eq!(g.leaves(), set![BIGBANG]);
 
         // a is the new leave
         g.depend("b", "a").unwrap();
         g.depend("x", "a").unwrap();
         g.depend("y", "x").unwrap();
         g.depend("z", "y").unwrap();
-        assert_eq!(g.leaves(), HashSet::from([BIGBANG, "a"]));
+        assert_eq!(g.leaves(), set![BIGBANG, "a"]);
 
         // with y removed, z should be a leaf
         g.delete(&"y");
-        assert_eq!(g.leaves(), HashSet::from([BIGBANG, "a", "z"]));
+        assert_eq!(g.leaves(), set![BIGBANG, "a", "z"]);
     }
 
     #[test]
@@ -605,49 +631,38 @@ mod tests {
 
         assert_no_dangling(&g);
 
-        assert_eq!(
-            g.dependents(&BIGBANG),
-            HashSet::from([STARDUST, STAR, PROTO_PLANET,])
-        );
-
+        assert_eq!(g.dependents(&BIGBANG), set![STARDUST, STAR, PROTO_PLANET]);
         assert!(!g.contains(&PLANET));
         assert!(!g.dependencies.contains_key(&PLANET));
         assert!(!g.dependents.contains_key(&PLANET));
 
-        assert_eq!(g.dependencies(&PLANET), HashSet::default());
-        assert_eq!(g.dependents(&PLANET), HashSet::default());
+        assert_eq!(g.dependencies(&PLANET), set![]);
+        assert_eq!(g.dependents(&PLANET), set![]);
 
-        assert_eq!(g.dependents(&PROTO_PLANET), HashSet::default());
-        assert_eq!(g.dependents(&STAR), HashSet::from([PROTO_PLANET]));
-        assert_eq!(g.dependents(&STARDUST), HashSet::from([STAR, PROTO_PLANET]));
-        assert_eq!(
-            g.dependents(&BIGBANG),
-            HashSet::from([STARDUST, STAR, PROTO_PLANET])
-        );
+        assert_eq!(g.dependents(&PROTO_PLANET), set![]);
+        assert_eq!(g.dependents(&STAR), set![PROTO_PLANET]);
+        assert_eq!(g.dependents(&STARDUST), set![STAR, PROTO_PLANET]);
+        assert_eq!(g.dependents(&BIGBANG), set![STARDUST, STAR, PROTO_PLANET]);
 
-        assert_eq!(
-            g.dependencies(&PROTO_PLANET),
-            HashSet::from([STAR, STARDUST, BIGBANG])
-        );
-        assert_eq!(g.dependencies(&STAR), HashSet::from([STARDUST, BIGBANG]));
-        assert_eq!(g.dependencies(&STARDUST), HashSet::from([BIGBANG]));
-        assert_eq!(g.dependencies(&BIGBANG), HashSet::default());
+        assert_eq!(g.dependencies(&PROTO_PLANET), set![STAR, STARDUST, BIGBANG],);
+        assert_eq!(g.dependencies(&STAR), set![STARDUST, BIGBANG]);
+        assert_eq!(g.dependencies(&STARDUST), set![BIGBANG]);
+        assert_eq!(g.dependencies(&BIGBANG), set![]);
 
         g.remove(&PROTO_PLANET).unwrap();
-
         assert_no_dangling(&g);
 
         assert!(!g.contains(&PROTO_PLANET));
-        assert_eq!(g.dependencies(&PROTO_PLANET), HashSet::default());
-        assert_eq!(g.dependents(&PROTO_PLANET), HashSet::default());
+        assert_eq!(g.dependencies(&PROTO_PLANET), set![]);
+        assert_eq!(g.dependents(&PROTO_PLANET), set![]);
 
-        assert_eq!(g.dependents(&STAR), HashSet::default());
-        assert_eq!(g.dependents(&STARDUST), HashSet::from([STAR]));
-        assert_eq!(g.dependents(&BIGBANG), HashSet::from([STARDUST, STAR]));
+        assert_eq!(g.dependents(&STAR), set![]);
+        assert_eq!(g.dependents(&STARDUST), set![STAR]);
+        assert_eq!(g.dependents(&BIGBANG), set![STARDUST, STAR]);
 
-        assert_eq!(g.dependencies(&STAR), HashSet::from([STARDUST, BIGBANG]));
-        assert_eq!(g.dependencies(&STARDUST), HashSet::from([BIGBANG]));
-        assert_eq!(g.dependencies(&BIGBANG), HashSet::default());
+        assert_eq!(g.dependencies(&STAR), set![STARDUST, BIGBANG]);
+        assert_eq!(g.dependencies(&STARDUST), set![BIGBANG]);
+        assert_eq!(g.dependencies(&BIGBANG), set![]);
     }
 
     #[test]
@@ -668,8 +683,8 @@ mod tests {
         assert!(!g.dependencies.contains_key(&PROTO_PLANET));
         assert!(!g.dependencies.contains_key(&PLANET));
 
-        assert_eq!(g.dependents(&BIGBANG), HashSet::from([STARDUST]));
-        assert_eq!(g.dependents(&STARDUST), HashSet::default());
+        assert_eq!(g.dependents(&BIGBANG), set![STARDUST]);
+        assert_eq!(g.dependents(&STARDUST), set![]);
     }
 
     #[test]
@@ -709,14 +724,14 @@ mod tests {
 
         assert_eq!(
             g.dependents(&BIGBANG),
-            HashSet::from([
+            set![
                 "light",
                 "infrared",
                 "uv",
                 "darkskin",
                 "blackhole",
                 "whitehole"
-            ])
+            ]
         );
 
         g.remove_autoremove(&"uv");
@@ -730,22 +745,16 @@ mod tests {
 
         assert_eq!(
             g.dependents(&BIGBANG),
-            HashSet::from(["light", "infrared", "blackhole", "whitehole"])
+            set!["light", "infrared", "blackhole", "whitehole"]
         );
-        assert_eq!(g.dependents(&"light"), HashSet::from(["infrared"]));
-        assert_eq!(g.dependents(&"infrared"), HashSet::default());
-        assert_eq!(g.dependents(&"blackhole"), HashSet::from(["whitehole"]));
-        assert_eq!(g.dependents(&"whitehole"), HashSet::default());
-        assert_eq!(g.dependencies(&BIGBANG), HashSet::default());
-        assert_eq!(g.dependencies(&"light"), HashSet::from([BIGBANG]));
-        assert_eq!(
-            g.dependencies(&"infrared"),
-            HashSet::from([BIGBANG, "light"])
-        );
-        assert_eq!(g.dependencies(&"blackhole"), HashSet::from([BIGBANG]));
-        assert_eq!(
-            g.dependencies(&"whitehole"),
-            HashSet::from([BIGBANG, "blackhole"])
-        );
+        assert_eq!(g.dependents(&"light"), set!["infrared"]);
+        assert_eq!(g.dependents(&"infrared"), set![]);
+        assert_eq!(g.dependents(&"blackhole"), set!["whitehole"]);
+        assert_eq!(g.dependents(&"whitehole"), set![]);
+        assert_eq!(g.dependencies(&BIGBANG), set![]);
+        assert_eq!(g.dependencies(&"light"), set![BIGBANG]);
+        assert_eq!(g.dependencies(&"infrared"), set![BIGBANG, "light"]);
+        assert_eq!(g.dependencies(&"blackhole"), set![BIGBANG]);
+        assert_eq!(g.dependencies(&"whitehole"), set![BIGBANG, "blackhole"],);
     }
 }
