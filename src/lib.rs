@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 type Edges<T> = HashMap<T, HashSet<T>>;
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct Graph<T>
 where
     T: Clone + Eq + std::hash::Hash,
@@ -74,10 +74,7 @@ where
     /// Returns whether dependent depends directly on dependency
     #[inline(always)]
     pub fn depends_on_directly(&self, dependent: &T, dependency: &T) -> bool {
-        self.dependencies
-            .get(dependent)
-            .map(|deps| deps.contains(dependency))
-            .unwrap_or(false)
+        edges_contain(&self.dependencies, dependent, dependency)
     }
 
     /// Returns deep dependencies of node
@@ -102,6 +99,21 @@ where
             .is_some_and(|deps| !deps.is_empty())
     }
 
+    pub fn leaves(&self) -> HashSet<T> {
+        let mut leaves = HashSet::new();
+        let mut cloned = self.clone();
+
+        for node in cloned.nodes.clone() {
+            if cloned.dependencies.get(&node).is_none() {
+                leaves.insert(node.clone());
+            }
+
+            cloned.delete(&node);
+        }
+
+        leaves
+    }
+
     /// Internal method for complete removal of the target
     fn delete(&mut self, target: &T) {
         if let Some(dependencies) = self.dependencies.get(target) {
@@ -113,7 +125,7 @@ where
         if let Some(dependents) = self.dependents.get(target) {
             dependents
                 .iter()
-                .for_each(|dependent| rm_from_deps(&mut self.dependencies, target, dependent));
+                .for_each(|dependent| rm_from_deps(&mut self.dependencies, dependent, target));
         }
 
         self.dependencies.remove(target);
@@ -268,6 +280,38 @@ where
     popped
 }
 
+fn edges_contain<T>(edges: &Edges<T>, key: &T, value: &T) -> bool
+where
+    T: Eq + std::hash::Hash,
+{
+    edges.get(key).is_some_and(|values| values.contains(value))
+}
+
+fn assert_no_dangling<T>(g: &Graph<T>)
+where
+    T: Clone + std::fmt::Debug + std::hash::Hash + Eq,
+{
+    for (dependency, dependents) in &g.dependents {
+        assert!(g.nodes.contains(dependency));
+
+        dependents.iter().for_each(|dependent| {
+            assert!(g.nodes.contains(dependent));
+            assert!(edges_contain(&g.dependents, dependency, dependent));
+            assert!(edges_contain(&g.dependencies, dependent, dependency));
+        });
+    }
+
+    for (dependent, dependencies) in &g.dependencies {
+        assert!(g.nodes.contains(dependent));
+
+        dependencies.iter().for_each(|dependency| {
+            assert!(g.nodes.contains(dependent));
+            assert!(edges_contain(&g.dependents, dependency, dependent));
+            assert!(edges_contain(&g.dependencies, dependent, dependency));
+        })
+    }
+}
+
 #[test]
 fn test_pop_queue() {
     let mut q = vec![0, 1, 2, 3, 4, 5, 20, 17];
@@ -305,6 +349,7 @@ mod tests {
         g.depend(PROTO_PLANET, STAR).unwrap();
         g.depend(PLANET, PROTO_PLANET).unwrap();
 
+        assert_no_dangling(&g);
         g
     }
 
@@ -357,6 +402,8 @@ mod tests {
         g.depend("sun", STARDUST).unwrap();
         g.depend("earth", "sun").unwrap();
         g.depend("human", "earth").unwrap();
+
+        assert_no_dangling(&g);
 
         assert!(g.depends_on(&"human", &"earth"));
         assert!(g.depends_on(&"human", &"sun"));
@@ -415,6 +462,8 @@ mod tests {
         g.depend("earth", "sun").unwrap();
         g.depend("earth", "god").unwrap();
         g.depend("human", "earth").unwrap();
+
+        assert_no_dangling(&g);
 
         {
             assert_eq!(
@@ -496,11 +545,34 @@ mod tests {
         g.undepend(&STAR, &BIGBANG)
             .expect_err("should not be able to undepend deep dependency");
 
+        assert_no_dangling(&g);
+
         g.undepend(&STAR, &STARDUST)
             .expect("should be able to undepend direct dependency");
 
+        assert_no_dangling(&g);
+
         assert!(!g.depends_on(&STAR, &STARDUST));
         assert!(!g.depends_on(&STAR, &BIGBANG));
+    }
+
+    #[test]
+    fn test_delete() {
+        let mut g = default_graph();
+
+        g.delete(&PROTO_PLANET);
+        assert_no_dangling(&g);
+
+        g.depend("b", "a").unwrap();
+        g.depend("x", "a").unwrap();
+        g.depend("y", "x").unwrap();
+        g.depend("z", "y").unwrap();
+
+        g.delete(&"y");
+        assert_no_dangling(&g);
+
+        g.delete(&"a");
+        assert_no_dangling(&g);
     }
 
     #[test]
@@ -510,7 +582,11 @@ mod tests {
         g.remove(&PROTO_PLANET)
             .expect_err("proto-planet is depended on by planet");
 
+        assert_no_dangling(&g);
+
         g.remove(&PLANET).unwrap();
+
+        assert_no_dangling(&g);
 
         assert_eq!(
             g.dependents(&BIGBANG),
@@ -542,6 +618,8 @@ mod tests {
 
         g.remove(&PROTO_PLANET).unwrap();
 
+        assert_no_dangling(&g);
+
         assert!(!g.contains(&PROTO_PLANET));
         assert_eq!(g.dependencies(&PROTO_PLANET), HashSet::default());
         assert_eq!(g.dependents(&PROTO_PLANET), HashSet::default());
@@ -559,6 +637,8 @@ mod tests {
     fn test_remove_force() {
         let mut g = default_graph();
         g.remove_force(&STAR);
+
+        assert_no_dangling(&g);
 
         assert!(!g.contains(&STAR));
         assert!(!g.contains(&PROTO_PLANET));
@@ -586,6 +666,8 @@ mod tests {
         g.depend("whitehole", "blackhole").unwrap();
 
         g.remove_autoremove(&PROTO_PLANET);
+
+        assert_no_dangling(&g);
 
         assert!(!g.contains(&STARDUST));
         assert!(!g.contains(&STAR));
@@ -621,6 +703,8 @@ mod tests {
         );
 
         g.remove_autoremove(&"uv");
+
+        assert_no_dangling(&g);
 
         assert!(g.contains(&"light"));
         assert!(g.contains(&"infrared"));
