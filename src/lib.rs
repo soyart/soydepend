@@ -101,14 +101,11 @@ where
 
     pub fn leaves(&self) -> HashSet<T> {
         let mut leaves = HashSet::new();
-        let mut cloned = self.clone();
 
-        for node in cloned.nodes.clone() {
-            if cloned.dependencies.get(&node).is_none() {
+        for node in &self.nodes {
+            if self.dependencies.get(&node).is_none() {
                 leaves.insert(node.clone());
             }
-
-            cloned.delete(&node);
         }
 
         leaves
@@ -573,6 +570,26 @@ mod tests {
 
         g.delete(&"a");
         assert_no_dangling(&g);
+
+        g.delete(&"x");
+        assert_no_dangling(&g);
+    }
+
+    #[test]
+    fn test_leaves() {
+        let mut g = default_graph();
+        assert_eq!(g.leaves(), HashSet::from([BIGBANG]));
+
+        // a is the new leave
+        g.depend("b", "a").unwrap();
+        g.depend("x", "a").unwrap();
+        g.depend("y", "x").unwrap();
+        g.depend("z", "y").unwrap();
+        assert_eq!(g.leaves(), HashSet::from([BIGBANG, "a"]));
+
+        // with y removed, z should be a leaf
+        g.delete(&"y");
+        assert_eq!(g.leaves(), HashSet::from([BIGBANG, "a", "z"]));
     }
 
     #[test]
