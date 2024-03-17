@@ -102,9 +102,9 @@ where
     pub fn leaves(&self) -> HashSet<T> {
         let mut leaves = HashSet::new();
 
-        for node in &self.nodes {
-            if self.dependencies.get(&node).is_none() {
-                leaves.insert(node.clone());
+        for n in &self.nodes {
+            if !self.dependencies.contains_key(n) {
+                leaves.insert(n.clone());
             }
         }
 
@@ -164,18 +164,20 @@ where
         while !q.is_empty() {
             let current = pop_queue(&mut q);
 
+            // Check before clone
             if self.dependents.contains_key(&current) {
                 self.dependents
                     .clone()
                     .get(&current)
                     .unwrap()
-                    .into_iter()
+                    .iter()
                     .for_each(|dependent| {
                         self.undepend(dependent, &current).unwrap();
                         q.push(dependent.clone());
                     });
             }
 
+            // Check before clone
             if self.dependencies.contains_key(&current) {
                 for dependency in self.dependencies.clone().get(&current).unwrap() {
                     // Push dependency to queue if remove_dependencies is set,
