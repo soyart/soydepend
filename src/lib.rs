@@ -141,20 +141,14 @@ where
         while !q.is_empty() {
             let current = pop_queue(&mut q);
 
-            if self.dependents.contains_key(&current) {
-                let cloned = self.dependents.clone();
-                let dependents = cloned.get(&current).unwrap();
-
-                for dependent in dependents.iter() {
+            if let Some(dependents) = self.dependents.clone().get(&current) {
+                dependents.into_iter().for_each(|dependent| {
                     self.undepend(dependent, &current).unwrap();
                     q.push(dependent.clone());
-                }
+                });
             }
 
-            if self.dependencies.contains_key(&current) {
-                let cloned = self.dependencies.clone();
-                let dependencies = cloned.get(&current).unwrap();
-
+            if let Some(dependencies) = self.dependencies.clone().get(&current) {
                 for dependency in dependencies {
                     // Push dependency to queue if remove_dependencies is set,
                     // and the dependency only has 1 dependent which happens to be current
@@ -162,11 +156,11 @@ where
                         if let Some(siblings) = self.dependents.get(dependency) {
                             match siblings.len() {
                                 0 => {
-                                    panic!("empty sibling");
+                                    panic!("empty siblings");
                                 }
                                 1 => {
                                     if !siblings.contains(&current) {
-                                        panic!("sibling does not contain target")
+                                        panic!("lone sibling is not current target")
                                     }
                                 }
                                 _ => continue,
