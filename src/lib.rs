@@ -33,7 +33,7 @@ where
         }
     }
 
-    /// Add dependency edges to the graph
+    /// Adds dependency edges to the graph
     pub fn depend(&mut self, dependent: T, dependency: T) -> Result<(), Error> {
         if dependent == dependency {
             return Err(Error::DependsOnSelf);
@@ -43,11 +43,20 @@ where
             return Err(Error::CircularDependency);
         }
 
-        self.nodes.insert(dependent.clone());
-        self.nodes.insert(dependency.clone());
+        insert_to_deps(
+            &mut self.dependents, //
+            dependency.clone(),
+            dependent.clone(),
+        );
 
-        insert_to_deps(&mut self.dependents, dependency.clone(), dependent.clone());
-        insert_to_deps(&mut self.dependencies, dependent, dependency);
+        insert_to_deps(
+            &mut self.dependencies, //
+            dependent.clone(),
+            dependency.clone(),
+        );
+
+        self.nodes.insert(dependent);
+        self.nodes.insert(dependency);
 
         Ok(())
     }
