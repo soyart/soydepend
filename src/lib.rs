@@ -100,13 +100,12 @@ where
     pub fn leaves(&self) -> HashSet<T> {
         let mut leaves = HashSet::new();
 
-        for n in &self.nodes {
-            if self.dependencies.contains_key(n) {
-                continue;
-            }
-
-            leaves.insert(n.clone());
-        }
+        self.nodes
+            .iter()
+            .filter(|n| !self.dependencies.contains_key(n))
+            .for_each(|n| {
+                leaves.insert(n.clone());
+            });
 
         leaves
     }
