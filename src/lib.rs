@@ -654,6 +654,158 @@ mod tests {
     }
 
     #[test]
+    fn test_layers() {
+        let mut g = Graph::new();
+        let (a, b, c, x, y, zero, one) = ("a", "b", "c", "x", "y", "0", "1");
+
+        g.depend(b, a).unwrap();
+        g.depend(c, a).unwrap();
+        g.depend(x, c).unwrap();
+        g.depend(y, x).unwrap();
+        g.depend(one, zero).unwrap();
+
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![zero, a], //
+                set![one, b, c],
+                set![x],
+                set![y],
+            ],
+        );
+
+        g.undepend(&b, &a).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![zero, a, b], //
+                set![one, c],
+                set![x],
+                set![y],
+            ]
+        );
+
+        g.undepend(&c, &a).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![zero, a, b, c], //
+                set![one, x],
+                set![y],
+            ]
+        );
+
+        let mut g = Graph::new();
+        g.depend(b, a).unwrap();
+        g.depend(c, a).unwrap();
+        g.depend(x, c).unwrap();
+        g.depend(y, x).unwrap();
+        g.depend(zero, c).unwrap();
+        g.depend(one, zero).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a], //
+                set![b, c],
+                set![zero, x],
+                set![one, y],
+            ]
+        );
+
+        // x directly depends on c, 1
+        // x depends on [a, c, 0, 1]
+        g.depend(x, one).unwrap();
+        assert_no_dangling(&g);
+        assert!(g.depends_on(&x, &c));
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a], //
+                set![b, c],
+                set![zero],
+                set![one],
+                set![x],
+                set![y],
+            ]
+        );
+
+        g.undepend(&y, &x).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a, y], //
+                set![b, c],
+                set![zero],
+                set![one],
+                set![x],
+            ]
+        );
+
+        // x directly depends on c
+        // x depends on [a, c]
+        g.undepend(&x, &one).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a, y], //
+                set![b, c],
+                set![zero, x],
+                set![one],
+            ]
+        );
+
+        // Test dummy depends
+        g.undepend(&x, &a)
+            .expect_err("x is not direct dependent of a");
+        g.depend(x, a).unwrap();
+        g.undepend(&x, &a).unwrap();
+        g.depend(x, a).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a, y], //
+                set![b, c],
+                set![zero, x],
+                set![one],
+            ]
+        );
+
+        // x will be a leaf
+        g.undepend(&x, &a).unwrap();
+        g.undepend(&x, &c).unwrap();
+        g.depend(&x, &b).unwrap();
+        g.undepend(&x, &b).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a, x, y], //
+                set![b, c],
+                set![zero],
+                set![one],
+            ]
+        );
+
+        g.depend(y, zero).unwrap();
+        assert_no_dangling(&g);
+        assert_eq!(
+            g.layers(),
+            vec![
+                set![a, x], //
+                set![b, c],
+                set![zero],
+                set![one, y],
+            ]
+        );
+    }
+
+    #[test]
     fn test_remove() {
         let mut g = default_graph();
 
