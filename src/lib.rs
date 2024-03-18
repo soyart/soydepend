@@ -116,9 +116,11 @@ where
 
         while !cloned.nodes.is_empty() {
             let leaves = cloned.leaves();
-            layers.push(leaves.clone());
+            leaves.iter().for_each(|leaf| {
+                cloned.delete(leaf);
+            });
 
-            leaves.iter().for_each(|leaf| cloned.delete(leaf));
+            layers.push(leaves);
         }
 
         layers
