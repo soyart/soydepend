@@ -347,9 +347,10 @@ where
 #[test]
 fn test_pop_queue() {
     let mut q = vec![0, 1, 2, 3, 4, 5, 20, 17];
-    for v in q.clone().into_iter() {
-        assert_eq!(v, pop_queue(&mut q));
-    }
+
+    q.clone().into_iter().for_each(|item| {
+        assert_eq!(item, pop_queue(&mut q));
+    });
 }
 
 impl std::fmt::Display for Error {
