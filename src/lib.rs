@@ -165,10 +165,11 @@ where
         }
 
         self.delete(target);
+
         Ok(())
     }
 
-    fn remove_deep(&mut self, target: &T, remove_dependencies: bool) {
+    pub fn remove_force(&mut self, target: &T) {
         let mut q = vec![target.clone()];
 
         while !q.is_empty() {
@@ -189,36 +190,63 @@ where
 
             // Check before clone
             if self.dependencies.contains_key(&current) {
-                for dependency in self.dependencies.clone().get(&current).unwrap() {
-                    // Push dependency to queue if remove_dependencies is set,
-                    // and the dependency only has 1 dependent which happens to be current
-                    if remove_dependencies {
-                        if let Some(siblings) = self.dependents.get(dependency) {
-                            assert!(!siblings.is_empty());
-                            assert!(siblings.contains(&current));
-
-                            if siblings.len() != 1 {
-                                continue;
-                            }
-                        }
-
-                        q.push(dependency.clone());
-                    }
-
-                    self.undepend(&current, dependency).unwrap();
-                }
+                self.dependencies
+                    .clone()
+                    .get(&current)
+                    .unwrap()
+                    .iter()
+                    .for_each(|dependency| {
+                        self.undepend(&current, dependency).unwrap();
+                    });
             }
 
             self.delete(&current);
         }
     }
 
-    pub fn remove_force(&mut self, target: &T) {
-        self.remove_deep(target, false);
-    }
-
     pub fn remove_autoremove(&mut self, target: &T) {
-        self.remove_deep(target, true);
+        let mut q = vec![target.clone()];
+
+        while !q.is_empty() {
+            let current = pop_queue(&mut q);
+
+            // Check before clone
+            if self.dependents.contains_key(&current) {
+                self.dependents
+                    .clone()
+                    .get(&current)
+                    .unwrap()
+                    .iter()
+                    .for_each(|dependent| {
+                        self.undepend(dependent, &current).unwrap();
+                        q.push(dependent.clone());
+                    });
+            }
+
+            // Check before clone
+            if self.dependencies.contains_key(&current) {
+                self.dependencies
+                    .clone()
+                    .get(&current)
+                    .unwrap()
+                    .iter()
+                    .for_each(|dependency| {
+                        if let Some(siblings) = self.dependents.get(dependency) {
+                            assert!(!siblings.is_empty());
+                            assert!(siblings.contains(&current));
+
+                            if siblings.len() != 1 {
+                                return;
+                            }
+                        }
+
+                        self.undepend(&current, dependency).unwrap();
+                        q.push(dependency.clone());
+                    });
+            }
+
+            self.delete(&current);
+        }
     }
 
     /// Shrinks graph to minimal memory allocation,
