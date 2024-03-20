@@ -235,13 +235,12 @@ where
                             assert!(!siblings.is_empty());
                             assert!(siblings.contains(&current));
 
-                            if siblings.len() != 1 {
-                                return;
+                            if siblings.len() == 1 {
+                                q.push(dependency.clone());
                             }
                         }
 
                         self.undepend(&current, dependency).unwrap();
-                        q.push(dependency.clone());
                     });
             }
 
