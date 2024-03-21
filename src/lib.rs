@@ -260,7 +260,7 @@ where
 /// Asserts that invariants are still valid
 pub fn assert_no_dangling<T>(g: &Graph<T>)
 where
-    T: Clone + std::fmt::Debug + std::hash::Hash + Eq,
+    T: Clone + std::hash::Hash + Eq,
 {
     for (dependency, dependents) in &g.dependents {
         assert!(g.nodes.contains(dependency));
